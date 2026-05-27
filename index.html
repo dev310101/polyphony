@@ -39,6 +39,7 @@
   --gemini:   #4285f4;
   --deepseek: #7b68ee;
   --ollama:   #515165;
+  --groq:     #f55036;
 
   --radius:   10px;
   --radius-lg: 16px;
@@ -1200,11 +1201,11 @@ const MODELS = {
     keyLink: 'https://console.anthropic.com/settings/keys',
     keyPlaceholder: 'sk-ant-api03-…',
     versions: [
-      { id: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5 (fast)' },
-      { id: 'claude-sonnet-4-5-20251001', label: 'Sonnet 4.5' },
-      { id: 'claude-opus-4-5-20251001', label: 'Opus 4.5 (best)' },
+      { id: 'claude-haiku-4-5', label: 'Haiku 4.5 (fast)' },
+      { id: 'claude-sonnet-4-5', label: 'Sonnet 4.5' },
+      { id: 'claude-opus-4-5', label: 'Opus 4.5 (best)' },
     ],
-    defaultVersion: 'claude-haiku-4-5-20251001',
+    defaultVersion: 'claude-haiku-4-5',
     // Cost per 1M tokens (input / output) in USD
     cost: { input: 0.25, output: 1.25 }
   },
@@ -1283,6 +1284,26 @@ const MODELS = {
     ],
     defaultVersion: 'llama3.2',
     ollamaBaseUrl: 'http://localhost:11434',
+    cost: { input: 0, output: 0 }
+  },
+  groq: {
+    id: 'groq',
+    name: 'Groq',
+    provider: 'Groq Cloud',
+    color: '#f55036',
+    icon: 'Gq',
+    supportsVision: false,
+    keyPrefix: ['gsk_'],
+    keyLink: 'https://console.groq.com/keys',
+    keyPlaceholder: 'gsk_…',
+    free: true,
+    versions: [
+      { id: 'llama-3.3-70b-versatile',  label: 'Llama 3.3 70B (GPT-4 quality)' },
+      { id: 'llama-3.1-8b-instant',     label: 'Llama 3.1 8B (fastest)' },
+      { id: 'mixtral-8x7b-32768',       label: 'Mixtral 8x7B (long context)' },
+      { id: 'gemma2-9b-it',             label: 'Gemma 2 9B (Google)' },
+    ],
+    defaultVersion: 'llama-3.3-70b-versatile',
     cost: { input: 0, output: 0 }
   }
 };
@@ -1442,13 +1463,18 @@ function renderModelList() {
       card.onkeydown = e => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); toggleModel(model.id); } };
     }
 
+    const isReady = hasKey || model.requiresKey === false;
     card.innerHTML = `
       <div class="model-card-icon" style="background:${model.color}">${model.icon}</div>
       <div class="model-card-info">
-        <div class="model-card-name">${model.name}${model.disabled ? ' <span class="badge badge-warn" style="font-size:9px;padding:0 4px">local</span>' : ''}</div>
+        <div class="model-card-name">
+          ${model.name}
+          ${model.free ? `<span style="font-size:9px;padding:1px 5px;background:rgba(245,80,54,0.18);color:#f77;border-radius:3px;font-weight:700;margin-left:3px">FREE</span>` : ''}
+          ${model.requiresKey === false ? `<span style="font-size:9px;padding:1px 5px;background:rgba(124,58,237,0.18);color:#9b7de8;border-radius:3px;font-weight:700;margin-left:3px">LOCAL</span>` : ''}
+        </div>
         <div class="model-card-sub">${model.provider}</div>
       </div>
-      <div class="model-status-dot ${hasKey ? 'has-key' : 'no-key'}" title="${hasKey ? 'API key set' : 'No API key'}"></div>
+      <div class="model-status-dot ${isReady ? 'has-key' : 'no-key'}" title="${isReady ? (model.requiresKey === false ? 'Ready — no key needed' : 'API key set') : 'No API key'}"></div>
     `;
     container.appendChild(card);
 
@@ -1560,6 +1586,7 @@ function renderApiKeyRows() {
       <div class="api-key-header">
         <div class="model-card-icon" style="background:${model.color};width:24px;height:24px;font-size:10px;border-radius:5px">${model.icon}</div>
         <span class="api-provider-name">${model.name} <span style="color:var(--text3);font-size:11px">(${model.provider})</span></span>
+        ${model.free ? `<span style="font-size:10px;padding:2px 7px;background:rgba(245,80,54,0.12);color:#f55036;border-radius:4px;font-weight:700;letter-spacing:.3px">FREE</span>` : ''}
         <div class="key-status-dot ${hasKey ? 'valid' : ''}" id="dot-${model.id}" title="${hasKey ? 'Key saved' : 'No key'}"></div>
         ${model.keyLink ? `<a class="get-key-link" href="${model.keyLink}" target="_blank" rel="noopener">Get key ↗</a>` : ''}
       </div>
@@ -1947,6 +1974,7 @@ async function callModel(modelId, userMsg, msgId) {
     else if (modelId === 'gemini')   text = await callGemini(apiKey, version, history, userMsg, ctrl.signal);
     else if (modelId === 'deepseek') text = await callOpenAI(apiKey, version, history, userMsg, ctrl.signal, true);
     else if (modelId === 'ollama')   text = await callOllama(version, history, userMsg, ctrl.signal);
+    else if (modelId === 'groq')     text = await callGroq(apiKey, version, history, userMsg, ctrl.signal);
     else throw new Error('Unknown model');
 
     clearTimeout(timeoutId);
@@ -2298,6 +2326,29 @@ function saveOllamaUrl() {
   saveToStorage();
   if (msgEl) { msgEl.textContent = `✓ URL saved: ${url}`; msgEl.style.color = 'var(--green)'; }
   setTimeout(() => { if (msgEl) msgEl.textContent = ''; }, 3000);
+}
+
+// ─── Groq ────────────────────────────────────────────────────────────────────
+async function callGroq(apiKey, model, history, userMsg, signal) {
+  const messages = history.map(h => ({ role: h.role, content: h.content }));
+  messages.push({ role: 'user', content: userMsg.content });
+
+  const resp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ model, messages, max_tokens: 2048 }),
+    signal
+  });
+
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    throw Object.assign(new Error(err?.error?.message || `HTTP ${resp.status}`), { status: resp.status });
+  }
+  const data = await resp.json();
+  return data.choices?.[0]?.message?.content || '';
 }
 
 // ─── Error parsing ─────────────────────────────────────────────────────────────
