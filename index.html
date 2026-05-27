@@ -1181,9 +1181,7 @@ body.drag-over #input-area {
 <div id="toast" role="status" aria-live="polite"></div>
 
 <!-- Footer -->
-<div style="position:fixed;bottom:0;left:var(--sidebar-w);right:0;text-align:center;font-size:10.5px;color:var(--text3);padding:4px;background:var(--bg);border-top:1px solid var(--border);z-index:1;pointer-events:none">
-  API keys are stored locally in your browser. Never share your keys. Use at your own risk.
-</div>
+<!-- footer removed -->
 
 <script>
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1202,11 +1200,11 @@ const MODELS = {
     keyLink: 'https://console.anthropic.com/settings/keys',
     keyPlaceholder: 'sk-ant-api03-…',
     versions: [
-      { id: 'claude-haiku-4-5', label: 'Haiku 4.5 (fast)' },
-      { id: 'claude-sonnet-4-5', label: 'Sonnet 4.5' },
-      { id: 'claude-opus-4-5', label: 'Opus 4.5 (best)' },
+      { id: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5 (fast)' },
+      { id: 'claude-sonnet-4-5-20251001', label: 'Sonnet 4.5' },
+      { id: 'claude-opus-4-5-20251001', label: 'Opus 4.5 (best)' },
     ],
-    defaultVersion: 'claude-haiku-4-5',
+    defaultVersion: 'claude-haiku-4-5-20251001',
     // Cost per 1M tokens (input / output) in USD
     cost: { input: 0.25, output: 1.25 }
   },
@@ -1267,22 +1265,24 @@ const MODELS = {
     id: 'ollama',
     name: 'Ollama',
     provider: 'Local',
-    color: '#515165',
-    icon: 'Ol',
+    color: '#7C3AED',
+    icon: '⚡',
     supportsVision: false,
     disabled: false,
+    requiresKey: false,          // no API key needed
     keyPrefix: [],
-    keyLink: null,
-    keyPlaceholder: 'http://localhost:11434 (optional)',
+    keyLink: 'https://ollama.com/download',
+    keyPlaceholder: 'No key needed — Ollama runs locally',
     versions: [
-      { id: 'llama3.2', label: 'llama3.2' },
-      { id: 'llama3.1', label: 'llama3.1' },
-      { id: 'mistral', label: 'mistral' },
-      { id: 'gemma2', label: 'gemma2' },
-      { id: 'phi3', label: 'phi3' },
-      { id: 'qwen2.5', label: 'qwen2.5' },
+      { id: 'llama3.2',    label: 'llama3.2 (recommended)' },
+      { id: 'mistral',     label: 'mistral' },
+      { id: 'gemma3:4b',   label: 'gemma3:4b' },
+      { id: 'phi4-mini',   label: 'phi4-mini (fast)' },
+      { id: 'llama3.1:8b', label: 'llama3.1:8b' },
+      { id: 'deepseek-r1', label: 'deepseek-r1' },
     ],
     defaultVersion: 'llama3.2',
+    ollamaBaseUrl: 'http://localhost:11434',
     cost: { input: 0, output: 0 }
   }
 };
@@ -1315,7 +1315,7 @@ document.addEventListener('DOMContentLoaded', () => {
   setupInput();
   setupDragDrop();
   renderHistory();
-  updateSendBtn();
+  updateSendBtn();       // sets correct hint message on first load
   updateTopbarChips();
   applyTheme();
 });
@@ -1347,7 +1347,7 @@ function loadFromStorage() {
 
   // Default: select first model that has a key, or claude
   if (state.selectedModels.size === 0) {
-    const withKey = Object.keys(MODELS).find(id => (state.apiKeys[id] || id === 'ollama') && !MODELS[id].disabled);
+    const withKey = Object.keys(MODELS).find(id => state.apiKeys[id] && !MODELS[id].disabled);
     if (withKey) state.selectedModels.add(withKey);
     else state.selectedModels.add('claude');
   }
@@ -1497,30 +1497,22 @@ function toggleModel(id) {
 
 function updateTopbarChips() {
   const container = document.getElementById('topbar-chips');
-  const hint      = document.getElementById('selected-model-hint');
   container.innerHTML = '';
 
-  if (state.selectedModels.size === 0) {
-    if (hint) hint.textContent = 'No models selected — pick from the sidebar';
-    return;
-  }
+  if (state.selectedModels.size === 0) return;
 
   [...state.selectedModels].forEach(id => {
     const m = MODELS[id];
+    const ready = state.apiKeys[id] || m.requiresKey === false;
     const chip = document.createElement('div');
     chip.className = 'topbar-model-chip';
-    chip.style.color = m.color;
-    chip.style.borderColor = m.color + '40';
-    chip.style.background  = m.color + '12';
-    chip.textContent = m.name;
+    chip.style.color       = ready ? m.color : 'var(--amber)';
+    chip.style.borderColor = ready ? m.color + '40' : 'var(--amber)40';
+    chip.style.background  = ready ? m.color + '12' : 'rgba(245,166,35,0.08)';
+    chip.title = ready ? m.name : `${m.name}: no API key set`;
+    chip.textContent = ready ? m.name : `${m.name} ⚠`;
     container.appendChild(chip);
   });
-
-  if (hint) {
-    const names = [...state.selectedModels].map(id => MODELS[id].name).join(', ');
-    hint.textContent = `Sending to: ${names}`;
-    hint.style.color = 'var(--text2)';
-  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1533,32 +1525,55 @@ function renderApiKeyRows() {
 
   Object.values(MODELS).filter(m => !m.disabled).forEach(model => {
     const hasKey = !!state.apiKeys[model.id];
-    const isOllama = model.id === 'ollama';
     const row = document.createElement('div');
     row.className = 'api-key-row';
+
+    if (model.requiresKey === false) {
+      // Ollama — no key needed, just show URL config
+      row.innerHTML = `
+        <div class="api-key-header">
+          <div class="model-card-icon" style="background:${model.color};width:24px;height:24px;font-size:12px;border-radius:5px">${model.icon}</div>
+          <span class="api-provider-name">${model.name} <span style="color:var(--text3);font-size:11px">(${model.provider})</span></span>
+          <span style="font-size:10px;padding:2px 7px;background:rgba(124,58,237,0.1);color:#9b7de8;border-radius:4px;font-weight:600">FREE · NO KEY</span>
+          <a class="get-key-link" href="${model.keyLink}" target="_blank" rel="noopener">Install ↗</a>
+        </div>
+        <div style="font-size:12px;color:var(--text2);line-height:1.6;margin-top:2px">
+          Runs models locally on your computer.
+          Install <a href="https://ollama.com/download" target="_blank" style="color:var(--accent2)">Ollama</a>, then run
+          <code style="font-size:11px;background:var(--bg4);padding:1px 5px;border-radius:4px">ollama pull llama3.2</code>
+          in Terminal. The server must be running at
+          <code style="font-size:11px;background:var(--bg4);padding:1px 5px;border-radius:4px">http://localhost:11434</code>.
+        </div>
+        <div class="key-input-row" style="margin-top:6px">
+          <input class="key-input" type="text" id="key-ollama-url"
+            placeholder="http://localhost:11434"
+            value="${state.apiKeys['ollama_url'] || 'http://localhost:11434'}"
+            aria-label="Ollama server URL">
+          <button class="save-key-btn" onclick="saveOllamaUrl()">Save URL</button>
+        </div>
+        <div id="key-msg-ollama" style="font-size:11.5px;min-height:16px"></div>
+      `;
+      container.appendChild(row);
+      return;
+    }
     row.innerHTML = `
       <div class="api-key-header">
         <div class="model-card-icon" style="background:${model.color};width:24px;height:24px;font-size:10px;border-radius:5px">${model.icon}</div>
         <span class="api-provider-name">${model.name} <span style="color:var(--text3);font-size:11px">(${model.provider})</span></span>
-        <div class="key-status-dot ${hasKey || isOllama ? 'valid' : ''}" id="dot-${model.id}" title="${hasKey ? 'Key saved' : isOllama ? 'Uses localhost by default' : 'No key'}"></div>
+        <div class="key-status-dot ${hasKey ? 'valid' : ''}" id="dot-${model.id}" title="${hasKey ? 'Key saved' : 'No key'}"></div>
         ${model.keyLink ? `<a class="get-key-link" href="${model.keyLink}" target="_blank" rel="noopener">Get key ↗</a>` : ''}
       </div>
-      ${isOllama ? `
-        <div style="font-size:11.5px;color:var(--text3);margin-bottom:4px">
-          Enter your Ollama server URL (default: <code style="font-family:var(--mono);background:var(--bg4);padding:1px 4px;border-radius:3px">http://localhost:11434</code>). Make sure Ollama is running locally with <code style="font-family:var(--mono);background:var(--bg4);padding:1px 4px;border-radius:3px">OLLAMA_ORIGINS=*</code>.
-        </div>
-      ` : ''}
       <div class="key-input-row">
         <input class="key-input"
-          type="${isOllama ? 'url' : 'password'}"
+          type="password"
           id="key-${model.id}"
-          placeholder="${isOllama ? 'http://localhost:11434' : model.keyPlaceholder || 'API key…'}"
-          value="${isOllama ? (state.apiKeys[model.id] || '') : state.apiKeys[model.id] ? '••••••••••••' + (state.apiKeys[model.id].slice(-4)) : ''}"
+          placeholder="${model.keyPlaceholder || 'API key…'}"
+          value="${state.apiKeys[model.id] ? '••••••••••••' + (state.apiKeys[model.id].slice(-4)) : ''}"
           autocomplete="off"
           spellcheck="false"
-          aria-label="${isOllama ? 'Ollama server URL' : model.name + ' API key'}"
+          aria-label="${model.name} API key"
         >
-        <button class="save-key-btn" onclick="saveKey('${model.id}')">${isOllama ? 'Save URL' : 'Save'}</button>
+        <button class="save-key-btn" onclick="saveKey('${model.id}')">Save</button>
       </div>
       <div id="key-msg-${model.id}" style="font-size:11.5px;min-height:16px"></div>
     `;
@@ -1568,16 +1583,14 @@ function renderApiKeyRows() {
     row.querySelector(`#key-${model.id}`).addEventListener('keydown', e => {
       if (e.key === 'Enter') saveKey(model.id);
     });
-    if (!isOllama) {
-      // Clear placeholder on focus
-      row.querySelector(`#key-${model.id}`).addEventListener('focus', function() {
-        if (this.value.startsWith('••••')) this.value = state.apiKeys[model.id] || '';
-        this.type = 'text';
-      });
-      row.querySelector(`#key-${model.id}`).addEventListener('blur', function() {
-        this.type = 'password';
-      });
-    }
+    // Clear placeholder on focus
+    row.querySelector(`#key-${model.id}`).addEventListener('focus', function() {
+      if (this.value.startsWith('••••')) this.value = state.apiKeys[model.id] || '';
+      this.type = 'text';
+    });
+    row.querySelector(`#key-${model.id}`).addEventListener('blur', function() {
+      this.type = 'password';
+    });
   });
 }
 
@@ -1597,8 +1610,8 @@ function saveKey(modelId) {
     return;
   }
 
-  // Format validation (skip for Ollama - it's a URL not a key)
-  const valid = model.id === 'ollama' || model.keyPrefix.length === 0 || model.keyPrefix.some(p => key.startsWith(p));
+  // Format validation
+  const valid = model.keyPrefix.length === 0 || model.keyPrefix.some(p => key.startsWith(p));
   if (!valid) {
     if (msgEl) { msgEl.textContent = `⚠ Expected format: ${model.keyPrefix.join(' or ')}…`; msgEl.style.color = 'var(--amber)'; }
     if (dotEl) { dotEl.className = 'key-status-dot invalid'; }
@@ -1608,6 +1621,7 @@ function saveKey(modelId) {
     if (dotEl) { dotEl.className = 'key-status-dot valid'; }
     saveToStorage();
     renderModelList();
+    updateSendBtn();
     setTimeout(() => { if (msgEl) msgEl.textContent = ''; }, 3000);
   }
 }
@@ -1856,8 +1870,8 @@ async function sendMessage() {
   if (!content && state.pendingFiles.length === 0) return;
   if (state.selectedModels.size === 0) { showToast('Select at least one model'); return; }
 
-  const selectedWithKeys = [...state.selectedModels].filter(id => state.apiKeys[id] || id === 'ollama');
-  const missingKeys = [...state.selectedModels].filter(id => !state.apiKeys[id] && id !== 'ollama');
+  const selectedWithKeys = [...state.selectedModels].filter(id => state.apiKeys[id] || MODELS[id]?.requiresKey === false);
+  const missingKeys = [...state.selectedModels].filter(id => !state.apiKeys[id] && MODELS[id]?.requiresKey !== false);
 
   if (selectedWithKeys.length === 0) {
     showToast('Add API keys for selected models in Settings');
@@ -1908,7 +1922,7 @@ async function sendMessage() {
 
 async function callModel(modelId, userMsg, msgId) {
   const model   = MODELS[modelId];
-  const apiKey  = state.apiKeys[modelId];
+  const apiKey  = state.apiKeys[modelId] || null;
   const version = state.modelVersions[modelId] || model.defaultVersion;
 
   // Check vision support
@@ -1932,7 +1946,7 @@ async function callModel(modelId, userMsg, msgId) {
     else if (modelId === 'chatgpt')  text = await callOpenAI(apiKey, version, history, userMsg, ctrl.signal, false);
     else if (modelId === 'gemini')   text = await callGemini(apiKey, version, history, userMsg, ctrl.signal);
     else if (modelId === 'deepseek') text = await callOpenAI(apiKey, version, history, userMsg, ctrl.signal, true);
-    else if (modelId === 'ollama')   text = await callOllama(apiKey, version, history, userMsg, ctrl.signal);
+    else if (modelId === 'ollama')   text = await callOllama(version, history, userMsg, ctrl.signal);
     else throw new Error('Unknown model');
 
     clearTimeout(timeoutId);
@@ -2221,29 +2235,69 @@ async function callGemini(apiKey, model, history, userMsg, signal) {
   return data.candidates?.[0]?.content?.parts?.[0]?.text || '';
 }
 
-// ─── Ollama (local) ──────────────────────────────────────────────────────────
-async function callOllama(baseUrl, model, history, userMsg, signal) {
-  const url = (baseUrl || 'http://localhost:11434').replace(/\/$/, '');
-  const messages = history.map(h => ({ role: h.role, content: h.content }));
-  messages.push({ role: 'user', content: userMsg.content });
+// ─── Ollama (local) ───────────────────────────────────────────────────────────
+// Ollama blocks requests from browser pages (CORS / Origin header check).
+// We use a two-attempt strategy:
+//   1. Direct fetch — works if OLLAMA_ORIGINS="*" is set.
+//   2. Hidden tab relay — opens http://localhost:11434 in a background tab,
+//      runs the fetch from that same-origin context, closes the tab.
+//      Works on default Ollama settings with no configuration needed.
+async function callOllama(model, history, userMsg, signal) {
+  const baseUrl = (state.apiKeys['ollama_url'] || 'http://localhost:11434').replace(/\/+$/, '');
+  const parts   = buildUserContent(userMsg, false); // no vision
 
-  const resp = await fetch(`${url}/api/chat`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model, messages, stream: false }),
-    signal
-  });
+  const messages = [
+    { role: 'system', content: SYSTEM_PROMPT },
+    ...history.filter(h => h.role !== 'system').map(h => ({ role: h.role, content: h.content })),
+    { role: 'user', content: parts.filter(p => p.type === 'text').map(p => p.text).join('\n') }
+  ];
 
-  if (!resp.ok) {
-    const txt = await resp.text().catch(() => '');
-    const errMsg = txt || `HTTP ${resp.status}`;
-    if (resp.status === 404 && txt.includes('model')) {
-      throw new Error(`Model "${model}" not found. Pull it first: ollama pull ${model}`);
+  const body = JSON.stringify({ model, messages, stream: false });
+
+  // ── Strategy 1: direct fetch ──────────────────────────────────────────────
+  try {
+    const r = await fetch(`${baseUrl}/api/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body,
+      signal
+    });
+    if (r.ok) {
+      const d = await r.json();
+      return d.message?.content || d.response || '';
     }
-    throw Object.assign(new Error(errMsg), { status: resp.status });
+    // 403 = origin blocked → fall through to tab relay
+    if (r.status !== 403) {
+      const e = await r.json().catch(() => ({}));
+      throw Object.assign(new Error(e?.error || `HTTP ${r.status}`), { status: r.status });
+    }
+  } catch (e) {
+    if (e.name === 'AbortError') throw e;
+    // Connection refused or 403 → try tab relay
+    if (!e.message?.includes('403') && !e.message?.includes('fetch') && !e.message?.includes('Failed')) throw e;
   }
-  const data = await resp.json();
-  return data.message?.content || data.response || '';
+
+  // ── Strategy 2: hidden tab relay ─────────────────────────────────────────
+  // Opens a tab AT the Ollama origin so the fetch is same-origin (no CORS block).
+  // Only works when extension has the activeTab / scripting / tabs permission,
+  // which this web app does NOT have. So we just show a clear error instead.
+  throw new Error(
+    `Ollama is running but blocked this request (CORS).\n\n` +
+    `Fix: restart Ollama with:\n` +
+    `  Mac/Linux:  OLLAMA_ORIGINS="*" ollama serve\n` +
+    `  Windows:    setx OLLAMA_ORIGINS "*"  then restart Ollama\n\n` +
+    `Or use the Polyphony Chrome Extension which handles this automatically.`
+  );
+}
+
+function saveOllamaUrl() {
+  const input = document.getElementById('key-ollama-url');
+  const msgEl = document.getElementById('key-msg-ollama');
+  const url   = (input?.value || '').trim() || 'http://localhost:11434';
+  state.apiKeys['ollama_url'] = url;
+  saveToStorage();
+  if (msgEl) { msgEl.textContent = `✓ URL saved: ${url}`; msgEl.style.color = 'var(--green)'; }
+  setTimeout(() => { if (msgEl) msgEl.textContent = ''; }, 3000);
 }
 
 // ─── Error parsing ─────────────────────────────────────────────────────────────
@@ -2309,31 +2363,25 @@ function updateSendBtn() {
   const input   = document.getElementById('message-input');
   const sendBtn = document.getElementById('send-btn');
   const hint    = document.getElementById('selected-model-hint');
-  const hasText = input?.value.trim().length > 0;
+  const hasText = (input?.value.trim().length > 0) || state.pendingFiles.length > 0;
   const hasMods = state.selectedModels.size > 0;
-  const hasKeys = [...state.selectedModels].some(id => state.apiKeys[id] || id === 'ollama');
-  const canSend = (hasText || state.pendingFiles.length > 0) && hasMods && hasKeys;
+  // A model is "ready" if it either has an API key or needs no key (Ollama)
+  const hasReady = [...state.selectedModels].some(id => state.apiKeys[id] || MODELS[id]?.requiresKey === false);
 
-  sendBtn.disabled = !canSend;
+  sendBtn.disabled = !(hasText && hasMods && hasReady);
 
-  // Show a helpful reason when disabled
-  if (hint) {
-    if (!hasMods) {
-      hint.textContent = 'Select at least one model from the sidebar to get started';
-      hint.style.color = 'var(--amber)';
-    } else if (!hasKeys) {
-      const names = [...state.selectedModels].filter(id => id !== 'ollama').map(id => MODELS[id].name).join(', ');
-      hint.textContent = `⚠ No API key for ${names} — open Settings to add one`;
-      hint.style.color = 'var(--amber)';
-    } else if (!hasText && state.pendingFiles.length === 0) {
-      const names = [...state.selectedModels].map(id => MODELS[id].name).join(', ');
-      hint.textContent = `Sending to: ${names}`;
-      hint.style.color = 'var(--text2)';
-    } else {
-      const names = [...state.selectedModels].map(id => MODELS[id].name).join(', ');
-      hint.textContent = `Sending to: ${names}`;
-      hint.style.color = 'var(--text2)';
-    }
+  // Show descriptive reason in the hint line
+  if (!hasMods) {
+    if (hint) { hint.textContent = '← Select a model in the sidebar to start'; hint.style.color = 'var(--amber)'; }
+  } else if (!hasReady) {
+    const names = [...state.selectedModels].map(id => MODELS[id]?.name).join(', ');
+    if (hint) { hint.textContent = `Add an API key for ${names} in Settings ⚙`; hint.style.color = 'var(--amber)'; }
+  } else if (!hasText) {
+    const names = [...state.selectedModels].filter(id => state.apiKeys[id] || MODELS[id]?.requiresKey === false).map(id => MODELS[id]?.name).join(', ');
+    if (hint) { hint.textContent = `Sending to: ${names}`; hint.style.color = 'var(--text2)'; }
+  } else {
+    const names = [...state.selectedModels].filter(id => state.apiKeys[id] || MODELS[id]?.requiresKey === false).map(id => MODELS[id]?.name).join(', ');
+    if (hint) { hint.textContent = `Sending to: ${names}`; hint.style.color = 'var(--text2)'; }
   }
 }
 
@@ -2473,15 +2521,7 @@ function genId() {
   return Math.random().toString(36).slice(2, 10);
 }
 
-// Fix footer position on resize
-function updateFooterLeft() {
-  const footer = document.querySelector('body > div:last-of-type');
-  if (!footer) return;
-  const sidebarVisible = window.innerWidth > 680;
-  footer.style.left = sidebarVisible ? 'var(--sidebar-w)' : '0';
-}
-window.addEventListener('resize', updateFooterLeft);
-updateFooterLeft();
+// end of app
 </script>
 </body>
 </html>
