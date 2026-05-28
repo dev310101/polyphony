@@ -1006,6 +1006,109 @@ body.drag-over #input-area {
 }
 #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
+/* ═══════════════════════════════════════════════════════
+   ✨ SYNTHESIS STYLES — NEW
+═══════════════════════════════════════════════════════ */
+
+.synthesis-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  background: linear-gradient(135deg, rgba(110,106,240,0.06) 0%, rgba(155,143,245,0.06) 100%);
+  border: 1px solid rgba(110,106,240,0.2);
+  border-radius: var(--radius);
+  margin-top: 4px;
+  flex-wrap: wrap;
+}
+
+.synthesis-bar-label {
+  font-size: 11.5px;
+  color: var(--text3);
+  font-family: var(--mono);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.synthesis-model-select {
+  font-size: 12px;
+  padding: 4px 8px;
+  background: var(--bg3);
+  border: 1px solid var(--border2);
+  color: var(--text2);
+  border-radius: 7px;
+  cursor: pointer;
+  font-family: var(--sans);
+  outline: none;
+  transition: border-color 0.15s;
+  flex: 1;
+  min-width: 0;
+  max-width: 180px;
+}
+.synthesis-model-select:focus { border-color: var(--accent); }
+
+.synthesis-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 16px;
+  background: linear-gradient(135deg, var(--accent) 0%, var(--accent2) 100%);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  font-family: var(--sans);
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+  box-shadow: 0 2px 10px rgba(110,106,240,0.25);
+  flex-shrink: 0;
+}
+.synthesis-btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 4px 16px rgba(110,106,240,0.35); }
+.synthesis-btn:disabled { opacity: 0.6; cursor: not-allowed; transform: none; box-shadow: none; }
+.synthesis-btn .synth-spinner {
+  width: 12px; height: 12px;
+  border: 2px solid rgba(255,255,255,0.35);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  flex-shrink: 0;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Synthesis result bubble */
+.synthesis-result-wrapper { margin-top: 4px; }
+
+.synthesis-bubble {
+  background: linear-gradient(160deg, rgba(110,106,240,0.04) 0%, rgba(155,143,245,0.03) 100%) !important;
+  border-color: rgba(110,106,240,0.22) !important;
+}
+.synthesis-bubble .ai-bubble-header {
+  background: linear-gradient(135deg, rgba(110,106,240,0.09) 0%, rgba(155,143,245,0.07) 100%);
+  border-bottom-color: rgba(110,106,240,0.14);
+}
+.synthesis-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  font-weight: 700;
+  font-family: var(--display);
+  background: linear-gradient(135deg, var(--accent) 0%, var(--accent2) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.synthesis-by-label {
+  font-size: 10px;
+  color: var(--text3);
+  font-family: var(--mono);
+  margin-left: 3px;
+  -webkit-text-fill-color: var(--text3);
+}
+.synthesis-error-row { display: flex; flex-direction: column; gap: 6px; }
+
 /* ── Theme auto ── */
 @media (prefers-color-scheme: light) {
   [data-theme="auto"] {
@@ -1868,6 +1971,17 @@ function appendMessageToDOM(msg) {
     });
 
     container.appendChild(wrapper);
+
+    // ── SYNTHESIS: render bar or stored result from history ──────────────────
+    if (msg.synthesisResult) {
+      // Already synthesised — render the stored result directly (no bar)
+      renderSynthesisResult(msg.id, msg.synthesisModelId, msg.synthesisVersion, msg.synthesisResult);
+    } else {
+      // Check if we should show the synthesis bar (for fully-settled history messages)
+      const allSettled = (msg.responses || []).every(r => !r.loading);
+      if (allSettled) checkAndShowSynthesisBar(msg.id);
+    }
+    // ── END SYNTHESIS ─────────────────────────────────────────────────────────
   }
 }
 
@@ -2041,9 +2155,15 @@ function updateBubble(msgId, modelId, content, error, version, cost) {
     }
   }
   scrollToBottom();
-}
 
-// ─── Build conversation history ───────────────────────────────────────────────
+  // ── SYNTHESIS: check if bar should appear once all responses have settled ──
+  const parentMsg = state.messages.find(m => m.id === msgId);
+  if (parentMsg) {
+    const allSettled = (parentMsg.responses || []).every(r => !r.loading);
+    if (allSettled) checkAndShowSynthesisBar(msgId);
+  }
+  // ── END SYNTHESIS ─────────────────────────────────────────────────────────
+}
 function buildHistory(currentMsgId) {
   // Grab last 6 messages (3 user/assistant pairs) before the current one
   const relevant = state.messages
@@ -2080,6 +2200,12 @@ async function retryResponse(msgId, modelId) {
   const bubbleEl = bodyEl?.closest('.ai-bubble');
   if (bodyEl) bodyEl.innerHTML = `<div class="typing-indicator"><div class="typing-dots"><span></span><span></span><span></span></div><span>${MODELS[modelId]?.name} is thinking…</span></div>`;
   if (bubbleEl) bubbleEl.classList.remove('error-bubble');
+
+  // Hide synthesis bar while retrying (will re-appear if still ≥2 succeed)
+  // ── SYNTHESIS: hide bar on retry ──
+  const existingBar = document.getElementById(`synth-bar-${msgId}`);
+  if (existingBar) existingBar.remove();
+  // ── END SYNTHESIS ──
 
   // Find the user message that triggered this
   const userMsgIdx = state.messages.findIndex(m => m.id === msgId) - 1;
@@ -2491,6 +2617,12 @@ function exportChat() {
           lines.push(`## ${MODELS[r.modelId]?.name || r.modelId} (${shortenVersion(r.version)})\n${r.content}\n`);
         }
       });
+      // ── SYNTHESIS: include synthesis result in export ──
+      if (msg.synthesisResult) {
+        const synthName = MODELS[msg.synthesisModelId]?.name || msg.synthesisModelId || 'Unknown';
+        lines.push(`## ✨ Synthesised answer (by ${synthName})\n${msg.synthesisResult}\n`);
+      }
+      // ── END SYNTHESIS ──
     }
   });
 
@@ -2571,6 +2703,321 @@ function showToast(msg) {
 function genId() {
   return Math.random().toString(36).slice(2, 10);
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ✨ SYNTHESIS — NEW SECTION
+// Synthesises multiple model responses into a single unified answer.
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Returns all successful (non-error, non-loading, non-empty) responses
+ * for a given assistant message.
+ */
+function getSuccessfulResponses(msgId) {
+  const msg = state.messages.find(m => m.id === msgId);
+  if (!msg) return [];
+  return (msg.responses || []).filter(r => !r.loading && !r.error && r.content?.trim());
+}
+
+/**
+ * Returns models that are ready to perform synthesis:
+ * have a valid API key (or need no key, like Ollama) and are not disabled.
+ */
+function getReadyModelsForSynthesis() {
+  return Object.values(MODELS).filter(m =>
+    !m.disabled &&
+    (state.apiKeys[m.id] || m.requiresKey === false)
+  );
+}
+
+/**
+ * Checks whether the synthesis bar should be shown for a message group.
+ * Shows it if ≥2 successful responses exist and no synthesis is already present.
+ * Removes it if <2 successful (e.g. after error on retry).
+ */
+function checkAndShowSynthesisBar(msgId) {
+  const msg = state.messages.find(m => m.id === msgId);
+  if (!msg) return;
+
+  // Don't show bar if synthesis already done or in progress
+  if (msg.synthesisResult || msg.synthesisPending) return;
+
+  const successful = getSuccessfulResponses(msgId);
+  const existingBar = document.getElementById(`synth-bar-${msgId}`);
+
+  if (successful.length >= 2) {
+    // Build bar if not already present
+    if (!existingBar) buildSynthesisBar(msgId);
+  } else {
+    // Remove bar if it exists (dropped below threshold after retry)
+    if (existingBar) existingBar.remove();
+  }
+}
+
+/**
+ * Builds and inserts the synthesis bar DOM below the response wrapper.
+ */
+function buildSynthesisBar(msgId) {
+  const wrapper = document.getElementById(`msg-${msgId}`);
+  if (!wrapper) return;
+
+  const readyModels = getReadyModelsForSynthesis();
+  if (readyModels.length === 0) return;
+
+  // Pick default: first successful model, or first ready model
+  const successful = getSuccessfulResponses(msgId);
+  const defaultId  = successful[0]?.modelId || readyModels[0].id;
+
+  const bar = document.createElement('div');
+  bar.className = 'synthesis-bar';
+  bar.id = `synth-bar-${msgId}`;
+
+  // Build model options
+  const optionsHtml = readyModels.map(m => {
+    const ver  = state.modelVersions[m.id] || m.defaultVersion;
+    const label = m.requiresKey === false ? `${m.name}` : `${m.name} (${shortenVersion(ver)})`;
+    return `<option value="${m.id}" ${m.id === defaultId ? 'selected' : ''}>${label}</option>`;
+  }).join('');
+
+  bar.innerHTML = `
+    <span class="synthesis-bar-label">✦ ${successful.length} responses</span>
+    <select class="synthesis-model-select" id="synth-select-${msgId}" title="Model to synthesise with" aria-label="Synthesis model">
+      ${optionsHtml}
+    </select>
+    <button class="synthesis-btn" id="synth-btn-${msgId}" onclick="runSynthesis('${msgId}')" aria-label="Synthesise answers">
+      ✨ Synthesise answers
+    </button>
+  `;
+
+  // Insert after wrapper (not inside it)
+  wrapper.insertAdjacentElement('afterend', bar);
+}
+
+/**
+ * Main synthesis function. Called when user clicks the Synthesise button.
+ */
+async function runSynthesis(msgId) {
+  const msg = state.messages.find(m => m.id === msgId);
+  if (!msg) return;
+
+  const successful = getSuccessfulResponses(msgId);
+  if (successful.length < 2) { showToast('Need at least 2 successful responses to synthesise'); return; }
+
+  // Get the original user prompt (message before this assistant message)
+  const msgIndex    = state.messages.findIndex(m => m.id === msgId);
+  const userMsg     = msgIndex > 0 ? state.messages[msgIndex - 1] : null;
+  const userPrompt  = userMsg?.content || '(no original prompt)';
+
+  // Determine synthesis model
+  const selectEl    = document.getElementById(`synth-select-${msgId}`);
+  const synthModelId = selectEl?.value || getReadyModelsForSynthesis()[0]?.id;
+  if (!synthModelId) { showToast('No model available for synthesis'); return; }
+
+  const synthModel  = MODELS[synthModelId];
+  const synthVersion = state.modelVersions[synthModelId] || synthModel.defaultVersion;
+  const synthApiKey  = state.apiKeys[synthModelId] || null;
+
+  // Disable button and show loading
+  const btnEl = document.getElementById(`synth-btn-${msgId}`);
+  const barEl = document.getElementById(`synth-bar-${msgId}`);
+  if (btnEl) {
+    btnEl.disabled = true;
+    btnEl.innerHTML = '<div class="synth-spinner"></div> Synthesising…';
+  }
+  if (selectEl) selectEl.disabled = true;
+
+  // Mark in-progress so retries don't show duplicate bars
+  msg.synthesisPending = true;
+
+  // ── Build the synthesis prompt ──────────────────────────────────────────
+  const SYNTH_SYSTEM = `Analyse the answers from different AI models below. Identify:
+- Common ground and points of agreement
+- Unique insights from each model
+- Any contradictions or differences in reasoning
+- The strongest arguments and most useful information
+
+Then produce a single, final synthesised answer that combines the best parts from all responses. Write clearly and naturally, using markdown for readability. Do not just summarise — produce a genuinely better, unified answer.`;
+
+  const MAX_ANSWER_CHARS = 3000;
+  const answersText = successful.map(r => {
+    const name    = MODELS[r.modelId]?.name || r.modelId;
+    const content = (r.content || '').length > MAX_ANSWER_CHARS
+      ? r.content.slice(0, MAX_ANSWER_CHARS) + '\n[truncated]'
+      : r.content;
+    return `## ${name} says:\n${content}`;
+  }).join('\n\n---\n\n');
+
+  const synthPromptContent = `Original question: "${userPrompt}"\n\n${answersText}`;
+
+  // Fake userMsg for the API call (no attachments, no history needed)
+  const synthFakeMsg  = { role: 'user', content: synthPromptContent, attachments: [] };
+  const synthHistory  = [{ role: 'system', content: SYNTH_SYSTEM }];
+
+  // ── Show typing bubble ──────────────────────────────────────────────────
+  const typingBubble = buildSynthesisTypingBubble(msgId, synthModel, synthVersion);
+
+  // ── Call the API ────────────────────────────────────────────────────────
+  const ctrl = new AbortController();
+  const timeoutId = setTimeout(() => ctrl.abort(), 60000);
+
+  try {
+    let resultText;
+    if      (synthModelId === 'claude')   resultText = await callClaude(synthApiKey, synthVersion, synthHistory, synthFakeMsg, ctrl.signal);
+    else if (synthModelId === 'chatgpt')  resultText = await callOpenAI(synthApiKey, synthVersion, synthHistory, synthFakeMsg, ctrl.signal, false);
+    else if (synthModelId === 'gemini')   resultText = await callGemini(synthApiKey, synthVersion, synthHistory, synthFakeMsg, ctrl.signal);
+    else if (synthModelId === 'deepseek') resultText = await callOpenAI(synthApiKey, synthVersion, synthHistory, synthFakeMsg, ctrl.signal, true);
+    else if (synthModelId === 'ollama')   resultText = await callOllama(synthVersion, synthHistory, synthFakeMsg, ctrl.signal);
+    else if (synthModelId === 'groq')     resultText = await callGroq(synthApiKey, synthVersion, synthHistory, synthFakeMsg, ctrl.signal);
+    else throw new Error('Unknown model');
+
+    clearTimeout(timeoutId);
+
+    // ── Persist and render result ──────────────────────────────────────────
+    msg.synthesisResult   = resultText;
+    msg.synthesisModelId  = synthModelId;
+    msg.synthesisVersion  = synthVersion;
+    msg.synthesisPending  = false;
+
+    // Replace typing bubble with real result
+    typingBubble.remove();
+    if (barEl) barEl.remove(); // remove synthesis bar — done
+    renderSynthesisResult(msgId, synthModelId, synthVersion, resultText);
+
+    saveToStorage();
+    scrollToBottom();
+
+  } catch (err) {
+    clearTimeout(timeoutId);
+    msg.synthesisPending = false;
+
+    const errMsg = err.name === 'AbortError'
+      ? 'Synthesis timed out (60s). Try a faster model.'
+      : parseApiError(err);
+
+    // Show error inside the typing bubble
+    const bodyEl = typingBubble.querySelector('.ai-bubble-body');
+    if (bodyEl) {
+      bodyEl.innerHTML = `
+        <div class="synthesis-error-row">
+          <div class="error-msg">⚠ Synthesis failed: ${escapeHtml(errMsg)}</div>
+          <button class="retry-btn" onclick="retrySynthesis('${msgId}')">↻ Retry synthesis</button>
+        </div>`;
+    }
+    const headerEl = typingBubble.querySelector('.ai-bubble-header');
+    if (headerEl) headerEl.style.background = 'rgba(240,82,82,0.08)';
+    typingBubble.style.borderColor = 'rgba(240,82,82,0.25)';
+
+    // Re-enable bar
+    if (btnEl) { btnEl.disabled = false; btnEl.innerHTML = '✨ Synthesise answers'; }
+    if (selectEl) selectEl.disabled = false;
+  }
+}
+
+/**
+ * Creates and inserts a typing-indicator bubble for synthesis.
+ * Returns the DOM element so we can replace it later.
+ */
+function buildSynthesisTypingBubble(msgId, synthModel, synthVersion) {
+  const wrapper = document.getElementById(`msg-${msgId}`);
+  const barEl   = document.getElementById(`synth-bar-${msgId}`);
+
+  const resultWrapper = document.createElement('div');
+  resultWrapper.className = 'synthesis-result-wrapper';
+  resultWrapper.id = `synth-result-${msgId}`;
+
+  const bubble = document.createElement('div');
+  bubble.className = 'ai-bubble synthesis-bubble';
+
+  bubble.innerHTML = `
+    <div class="ai-bubble-header">
+      <div class="synthesis-badge">
+        ✨ Synthesising
+        <span class="synthesis-by-label">via ${synthModel.name} ${shortenVersion(synthVersion)}</span>
+      </div>
+      <div class="bubble-actions"></div>
+    </div>
+    <div class="ai-bubble-body">
+      <div class="typing-indicator">
+        <div class="typing-dots"><span></span><span></span><span></span></div>
+        <span>Synthesising all answers…</span>
+      </div>
+    </div>
+  `;
+
+  resultWrapper.appendChild(bubble);
+
+  // Insert after bar, or after wrapper
+  const insertAfter = barEl || wrapper;
+  insertAfter.insertAdjacentElement('afterend', resultWrapper);
+
+  scrollToBottom();
+  return resultWrapper;
+}
+
+/**
+ * Renders the final synthesis result bubble.
+ * Called both after a fresh synthesis and when restoring from history.
+ */
+function renderSynthesisResult(msgId, synthModelId, synthVersion, content) {
+  const wrapper = document.getElementById(`msg-${msgId}`);
+  if (!wrapper) return;
+
+  // Remove any existing result wrapper (e.g. loading state)
+  const existing = document.getElementById(`synth-result-${msgId}`);
+  if (existing) existing.remove();
+
+  const synthModel = MODELS[synthModelId] || { name: synthModelId, color: 'var(--accent)' };
+
+  const resultWrapper = document.createElement('div');
+  resultWrapper.className = 'synthesis-result-wrapper';
+  resultWrapper.id = `synth-result-${msgId}`;
+
+  const bubble = document.createElement('div');
+  bubble.className = 'ai-bubble synthesis-bubble';
+
+  bubble.innerHTML = `
+    <div class="ai-bubble-header">
+      <div class="synthesis-badge">
+        ✨ Synthesised answer
+        <span class="synthesis-by-label">by ${synthModel.name} ${shortenVersion(synthVersion)}</span>
+      </div>
+      <div class="bubble-actions">
+        <button class="bubble-btn" onclick="copyResponse(this)" title="Copy synthesis" aria-label="Copy synthesis">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        </button>
+      </div>
+    </div>
+    <div class="ai-bubble-body">${renderMarkdownSafe(content)}</div>
+  `;
+
+  resultWrapper.appendChild(bubble);
+
+  // Insert after the response wrapper (or after bar if it still exists)
+  const barEl = document.getElementById(`synth-bar-${msgId}`);
+  const insertAfter = barEl || wrapper;
+  insertAfter.insertAdjacentElement('afterend', resultWrapper);
+}
+
+/**
+ * Retries a failed synthesis — re-shows bar and lets user click again.
+ */
+function retrySynthesis(msgId) {
+  const msg = state.messages.find(m => m.id === msgId);
+  if (!msg) return;
+  msg.synthesisPending = false;
+
+  // Remove the failed result wrapper
+  const resultEl = document.getElementById(`synth-result-${msgId}`);
+  if (resultEl) resultEl.remove();
+
+  // Re-show the bar
+  const existingBar = document.getElementById(`synth-bar-${msgId}`);
+  if (!existingBar) buildSynthesisBar(msgId);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// END SYNTHESIS
+// ═══════════════════════════════════════════════════════════════════════════
 
 // end of app
 </script>
