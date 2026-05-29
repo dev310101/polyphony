@@ -99,6 +99,14 @@ body {
   z-index: 10;
 }
 
+/* Scrollable zone — model list grows here, footer stays pinned below */
+#sidebar-scroll {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-height: 0;
+}
+
 .sidebar-header {
   padding: 20px 18px 16px;
   border-bottom: 1px solid var(--border);
@@ -251,30 +259,32 @@ body {
 }
 .model-version-row { padding: 0 8px 8px 44px; }
 
-/* ── Sidebar footer area ── */
+/* ── Sidebar footer area — always pinned, never pushed off ── */
 .sidebar-footer {
-  margin-top: auto;
+  flex-shrink: 0;
   border-top: 1px solid var(--border);
-  padding: 12px 10px;
+  padding: 8px 10px 10px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 2px;
+  background: var(--bg2);
 }
 
 .sidebar-action-btn {
   display: flex;
   align-items: center;
   gap: 7px;
-  padding: 7px 8px;
+  padding: 6px 8px;
   border-radius: 7px;
   background: transparent;
   border: none;
   color: var(--text2);
   font-family: var(--sans);
-  font-size: 12.5px;
+  font-size: 12px;
   cursor: pointer;
   width: 100%;
   transition: all 0.15s;
+  white-space: nowrap;
 }
 .sidebar-action-btn:hover { background: var(--bg3); color: var(--text); }
 .sidebar-action-btn svg { flex-shrink: 0; opacity: 0.7; }
@@ -1140,10 +1150,11 @@ body.drag-over #input-area {
     </button>
   </div>
 
-  <div class="sidebar-section-title">Active models</div>
-
-  <div class="model-list" id="model-list">
-    <!-- Populated by JS -->
+  <div id="sidebar-scroll">
+    <div class="sidebar-section-title">Active models</div>
+    <div class="model-list" id="model-list">
+      <!-- Populated by JS -->
+    </div>
   </div>
 
   <div class="sidebar-footer">
@@ -1227,7 +1238,9 @@ body.drag-over #input-area {
     </div>
   </div>
 
-  <input type="file" id="file-input" multiple accept="image/*,.pdf,.docx,.txt" onchange="handleFileInput(event)">
+  <input type="file" id="file-input" multiple
+    accept="image/*,.pdf,.docx,.txt,.md,.markdown,.html,.htm,.css,.js,.jsx,.ts,.tsx,.json,.xml,.yaml,.yml,.csv,.py,.java,.c,.cpp,.cs,.go,.rs,.rb,.php,.sh,.bash,.zsh,.sql,.r,.swift,.kt,.dart,.vue,.svelte,.env,.toml,.ini,.cfg,.conf,.log,.graphql,.proto"
+    onchange="handleFileInput(event)">
 
 </main>
 
@@ -1274,6 +1287,34 @@ body.drag-over #input-area {
         <div class="settings-section-title">About</div>
         <div class="notice notice-info" style="font-size:12.5px;line-height:1.6">
           Polyphony runs entirely in your browser. All API calls go directly to each provider. Keys and history are stored only in your browser's localStorage.
+        </div>
+      </div>
+
+      <!-- Free AI Guide -->
+      <div class="settings-section">
+        <div class="settings-section-title">💡 Free AI — use without paying</div>
+        <div style="display:flex;flex-direction:column;gap:8px;font-size:12.5px;line-height:1.6">
+          <div style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:11px 13px">
+            <strong style="color:var(--green)">⚡ Ollama — 100% free, runs locally</strong><br>
+            No key, no cost, no internet. Runs on your computer.<br>
+            <a href="https://ollama.com/download" target="_blank" style="color:var(--accent2)">Install Ollama</a> then run
+            <code style="font-size:11px;background:var(--bg4);padding:1px 5px;border-radius:3px">ollama pull llama3.2</code> in Terminal.
+          </div>
+          <div style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:11px 13px">
+            <strong style="color:var(--groq)">🟠 Groq — free cloud, very fast</strong><br>
+            Free API key, no credit card needed. Use <em>Llama 3.1 8B ★</em> for best results.<br>
+            <a href="https://console.groq.com/keys" target="_blank" style="color:var(--accent2)">Get free Groq key →</a>
+          </div>
+          <div style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:11px 13px">
+            <strong style="color:var(--gemini)">✦ Gemini Flash — free tier</strong><br>
+            15 requests/minute free. If rate-limited, wait 60 seconds — it resets.<br>
+            <a href="https://aistudio.google.com/app/apikey" target="_blank" style="color:var(--accent2)">Get free Gemini key →</a>
+          </div>
+          <div style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:11px 13px">
+            <strong style="color:var(--text2)">Claude / ChatGPT / DeepSeek</strong><br>
+            Need credits after free trial. DeepSeek is cheapest (~$2 for months).<br>
+            <span style="color:var(--text3)">Tip: use Groq + Ollama as free alternatives.</span>
+          </div>
         </div>
       </div>
 
@@ -1401,12 +1442,12 @@ const MODELS = {
     keyPlaceholder: 'gsk_…',
     free: true,
     versions: [
-      { id: 'llama-3.3-70b-versatile',  label: 'Llama 3.3 70B (GPT-4 quality)' },
-      { id: 'llama-3.1-8b-instant',     label: 'Llama 3.1 8B (fastest)' },
-      { id: 'mixtral-8x7b-32768',       label: 'Mixtral 8x7B (long context)' },
-      { id: 'gemma2-9b-it',             label: 'Gemma 2 9B (Google)' },
+      { id: 'llama-3.1-8b-instant',     label: 'Llama 3.1 8B — fastest, free ★' },
+      { id: 'llama-3.3-70b-versatile',  label: 'Llama 3.3 70B — best quality' },
+      { id: 'mixtral-8x7b-32768',       label: 'Mixtral 8x7B — long context' },
+      { id: 'gemma2-9b-it',             label: 'Gemma 2 9B — Google model' },
     ],
-    defaultVersion: 'llama-3.3-70b-versatile',
+    defaultVersion: 'llama-3.1-8b-instant',
     cost: { input: 0, output: 0 }
   }
 };
@@ -1765,9 +1806,39 @@ function handleFileInput(event) {
   event.target.value = ''; // reset
 }
 
+// All text-based / code file extensions
+const CODE_EXTENSIONS = new Set([
+  'txt','md','markdown','html','htm','css','js','jsx','ts','tsx',
+  'json','xml','yaml','yml','csv','py','java','c','cpp','cc','h','hpp',
+  'cs','go','rs','rb','php','sh','bash','zsh','fish','sql','r','swift',
+  'kt','kts','dart','vue','svelte','env','toml','ini','cfg','conf',
+  'log','graphql','gql','proto','lua','scala','ex','exs','clj','hs',
+  'elm','ml','fs','fsx','jl','m','pl','pm','ps1','psm1','bat','cmd'
+]);
+
+function getFileExtension(name) {
+  const parts = name.toLowerCase().split('.');
+  return parts.length > 1 ? parts[parts.length - 1] : '';
+}
+
+function getLanguageLabel(name) {
+  const ext = getFileExtension(name);
+  const MAP = {
+    js:'JavaScript',jsx:'React/JSX',ts:'TypeScript',tsx:'React/TSX',
+    py:'Python',java:'Java',c:'C',cpp:'C++',cs:'C#',go:'Go',
+    rs:'Rust',rb:'Ruby',php:'PHP',sh:'Shell',sql:'SQL',r:'R',
+    swift:'Swift',kt:'Kotlin',dart:'Dart',vue:'Vue',svelte:'Svelte',
+    html:'HTML',htm:'HTML',css:'CSS',json:'JSON',xml:'XML',
+    yaml:'YAML',yml:'YAML',md:'Markdown',csv:'CSV',toml:'TOML',
+    graphql:'GraphQL',proto:'Protobuf',
+  };
+  return MAP[ext] || (ext ? ext.toUpperCase() : 'Text');
+}
+
 async function processFile(file) {
   const name = file.name;
   const type = file.type;
+  const ext  = getFileExtension(name);
 
   // Images
   if (type.startsWith('image/')) {
@@ -1782,7 +1853,7 @@ async function processFile(file) {
   }
 
   // PDF
-  if (type === 'application/pdf' || name.endsWith('.pdf')) {
+  if (type === 'application/pdf' || ext === 'pdf') {
     showToast('Extracting PDF text…');
     try {
       const buf = await file.arrayBuffer();
@@ -1798,14 +1869,12 @@ async function processFile(file) {
       state.pendingFiles.push({ name, type: 'text/plain', text, kind: 'document' });
       renderFilePreviews();
       showToast(`PDF extracted (${maxPages} pages)`);
-    } catch (e) {
-      showToast(`PDF error: ${e.message}`);
-    }
+    } catch (e) { showToast(`PDF error: ${e.message}`); }
     return;
   }
 
   // DOCX
-  if (type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || name.endsWith('.docx')) {
+  if (type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || ext === 'docx') {
     showToast('Extracting Word document…');
     try {
       const buf = await file.arrayBuffer();
@@ -1813,22 +1882,33 @@ async function processFile(file) {
       state.pendingFiles.push({ name, type: 'text/plain', text: `[DOCX: ${name}]\n\n${result.value}`, kind: 'document' });
       renderFilePreviews();
       showToast('Word document extracted');
-    } catch (e) {
-      showToast(`DOCX error: ${e.message}`);
-    }
+    } catch (e) { showToast(`DOCX error: ${e.message}`); }
     return;
   }
 
-  // Plain text
-  if (type === 'text/plain' || name.endsWith('.txt') || name.endsWith('.md')) {
-    const text = await file.text();
-    state.pendingFiles.push({ name, type: 'text/plain', text: `[Text file: ${name}]\n\n${text}`, kind: 'document' });
-    renderFilePreviews();
-    showToast('Text file attached');
+  // Code files + all text-based formats
+  const isCodeFile = CODE_EXTENSIONS.has(ext) || type.startsWith('text/');
+  const isNamedTextFile = ['makefile','dockerfile','jenkinsfile','.gitignore','.env',
+    '.editorconfig','.prettierrc','.eslintrc','.babelrc','.npmrc','.nvmrc']
+    .some(n => name.toLowerCase().endsWith(n));
+
+  if (isCodeFile || isNamedTextFile) {
+    try {
+      const rawText = await file.text();
+      const lang = getLanguageLabel(name);
+      const sizeKB = (file.size / 1024).toFixed(1);
+      const MAX_CODE_CHARS = 50000;
+      const truncated = rawText.length > MAX_CODE_CHARS;
+      const text = truncated ? rawText.slice(0, MAX_CODE_CHARS) : rawText;
+      const header = `[${lang}: ${name}${truncated ? ` — truncated to ${MAX_CODE_CHARS} chars` : ` (${sizeKB}KB)`}]\n\n`;
+      state.pendingFiles.push({ name, type: 'text/plain', text: header + text, kind: 'document', lang });
+      renderFilePreviews();
+      showToast(`${lang} file attached${truncated ? ' (truncated)' : ''}`);
+    } catch (e) { showToast(`Could not read file: ${e.message}`); }
     return;
   }
 
-  showToast(`Unsupported file type: ${name}`);
+  showToast(`Unsupported: "${name}" — try renaming with a known extension`);
 }
 
 function fileToBase64(file) {
@@ -1849,7 +1929,8 @@ function renderFilePreviews() {
     if (f.kind === 'image' && f.preview) {
       chip.innerHTML = `<img src="${f.preview}" alt="${f.name}">`;
     } else {
-      chip.innerHTML = `<span style="font-size:16px">${f.kind === 'document' ? '📄' : '📎'}</span>`;
+      const icon = f.lang ? '💻' : (f.kind === 'document' ? '📄' : '📎');
+      chip.innerHTML = `<span style="font-size:15px">${icon}</span>`;
     }
     chip.innerHTML += `<span title="${f.name}">${f.name}</span>
       <button class="remove-file-btn" onclick="removeFile(${i})" aria-label="Remove ${f.name}">✕</button>`;
@@ -2079,7 +2160,9 @@ async function callModel(modelId, userMsg, msgId) {
 
   const ctrl = new AbortController();
   state.abortControllers[modelId] = ctrl;
-  const timeoutId = setTimeout(() => ctrl.abort(), 30000);
+  // Ollama loads models into RAM on first use — give it 3 minutes
+  const timeoutMs = modelId === 'ollama' ? 180000 : 30000;
+  const timeoutId = setTimeout(() => ctrl.abort(), timeoutMs);
 
   try {
     let text;
@@ -2104,7 +2187,9 @@ async function callModel(modelId, userMsg, msgId) {
     clearTimeout(timeoutId);
     let errorMsg;
     if (err.name === 'AbortError') {
-      errorMsg = 'Request timed out (30s). Please try again.';
+      errorMsg = modelId === 'ollama'
+        ? 'Ollama timed out (3 min). The model may still be loading — try again in 30s, or pick a smaller model like phi4-mini.'
+        : 'Request timed out (30s). Please try again.';
     } else {
       errorMsg = parseApiError(err);
     }
@@ -2455,23 +2540,45 @@ function saveOllamaUrl() {
 }
 
 // ─── Groq ────────────────────────────────────────────────────────────────────
+// Groq free tier has context limits — we truncate aggressively to stay under.
 async function callGroq(apiKey, model, history, userMsg, signal) {
-  const messages = history.map(h => ({ role: h.role, content: h.content }));
-  messages.push({ role: 'user', content: userMsg.content });
+  // Include document attachments as text context
+  const docParts = (userMsg.attachments || [])
+    .filter(a => a.kind === 'document' && a.text)
+    .map(a => a.text.slice(0, 3000));
+  const userText = docParts.length > 0
+    ? docParts.join('\n\n---\n\n') + '\n\n' + userMsg.content
+    : userMsg.content;
+
+  // Keep only last 4 history messages, truncate each to 800 chars
+  const recentHistory = history
+    .filter(h => h.role !== 'system')
+    .slice(-4)
+    .map(h => ({ role: h.role, content: (h.content || '').slice(0, 800) }));
+
+  const messages = [
+    { role: 'system', content: SYSTEM_PROMPT },
+    ...recentHistory,
+    { role: 'user', content: userText.slice(0, 4000) }
+  ];
 
   const resp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
     method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({ model, messages, max_tokens: 2048 }),
+    headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model, messages, max_tokens: 1024 }),
     signal
   });
 
   if (!resp.ok) {
     const err = await resp.json().catch(() => ({}));
-    throw Object.assign(new Error(err?.error?.message || `HTTP ${resp.status}`), { status: resp.status });
+    const errMsg = err?.error?.message || `HTTP ${resp.status}`;
+    if (resp.status === 413 || /too large|token|context/i.test(errMsg)) {
+      throw Object.assign(
+        new Error('Request too large. Switch to "Llama 3.1 8B" in the model selector for a larger context window.'),
+        { status: 413 }
+      );
+    }
+    throw Object.assign(new Error(errMsg), { status: resp.status });
   }
   const data = await resp.json();
   return data.choices?.[0]?.message?.content || '';
@@ -2481,12 +2588,13 @@ async function callGroq(apiKey, model, history, userMsg, signal) {
 function parseApiError(err) {
   const msg    = err.message || '';
   const status = err.status;
-  if (status === 401 || /unauthorized|invalid.*key|api.key/i.test(msg)) return 'Invalid API key. Check Settings.';
-  if (status === 429 || /rate.limit|too many/i.test(msg))               return 'Rate limit reached. Wait a moment and retry.';
-  if (status === 402 || /insufficient.*balance|quota/i.test(msg))       return 'Quota exceeded or insufficient balance.';
+  if (status === 401 || /unauthorized|invalid.*key|api.key/i.test(msg)) return 'Invalid API key. Check Settings ⚙';
+  if (status === 429 || /rate.limit|too many/i.test(msg))               return 'Rate limit reached. Wait 60s and retry — or use Groq/Ollama (free).';
+  if (status === 402 || /insufficient.*balance|quota/i.test(msg))       return 'Quota exceeded. Add credits, or use Groq (free key) or Ollama (local).';
+  if (status === 413 || /too large|token.*limit|context.*limit/i.test(msg)) return msg.slice(0, 160) || 'Request too large — reduce message length.';
   if (status >= 500)                                                      return `Service error (${status}). Try again.`;
   if (/network|fetch|failed/i.test(msg))                                return 'Network error. Check your connection.';
-  return msg.slice(0, 120) || 'Unknown error';
+  return msg.slice(0, 160) || 'Unknown error';
 }
 
 // ─── Cost estimation ───────────────────────────────────────────────────────────
